@@ -1,0 +1,538 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 4.1: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isOptionalString(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isOptionalNumber(data, field, minVal, maxVal) {
+      return !(field in data) || (data[field] is number && data[field] >= minVal && data[field] <= maxVal);
+    }
+
+    // Validation Blueprints
+    function isValidUserPublic(data) {
+      return data.keys().hasAll([
+        'uid', 'displayName', 'username', 'xp', 'matchesCount',
+        'eventsHostedCount', 'isOnline', 'shareLocation', 'discoverable',
+        'verified', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'uid', 'displayName', 'username', 'photoURL', 'bannerURL', 'bio', 'city',
+        'favoriteSports', 'xp', 'matchesCount', 'eventsHostedCount',
+        'reputationSum', 'reputationCount', 'followersCount', 'followingCount',
+        'isOnline', 'lastSeen', 'lat', 'lng', 'shareLocation', 'discoverable',
+        'verified', 'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.uid)
+      && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 60
+      && data.username is string && data.username.size() >= 2 && data.username.size() <= 32 && data.username.matches('^[a-zA-Z0-9_.]+$')
+      && isOptionalString(data, 'photoURL', 1024)
+      && isOptionalString(data, 'bannerURL', 1024)
+      && isOptionalString(data, 'bio', 240)
+      && isOptionalString(data, 'city', 80)
+      && (!('favoriteSports' in data) || (
+        data.favoriteSports is list
+        && data.favoriteSports.size() <= 8
+        && (data.favoriteSports.size() == 0 || data.favoriteSports[0] is string)
+      ))
+      && data.xp is number && data.xp >= 0 && data.xp <= 10000000
+      && data.matchesCount is number && data.matchesCount >= 0 && data.matchesCount <= 100000
+      && data.eventsHostedCount is number && data.eventsHostedCount >= 0 && data.eventsHostedCount <= 100000
+      && isOptionalNumber(data, 'reputationSum', 0, 1000000)
+      && isOptionalNumber(data, 'reputationCount', 0, 100000)
+      && isOptionalNumber(data, 'followersCount', 0, 1000000)
+      && isOptionalNumber(data, 'followingCount', 0, 1000000)
+      && data.isOnline is bool
+      && (!('lastSeen' in data) || data.lastSeen is timestamp)
+      && isOptionalNumber(data, 'lat', -90, 90)
+      && isOptionalNumber(data, 'lng', -180, 180)
+      && data.shareLocation is bool
+      && data.discoverable is bool
+      && data.verified is bool
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['uid', 'email', 'preferredRadiusKm', 'notificationsEnabled', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'preferredRadiusKm', 'notificationsEnabled', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.preferredRadiusKm is number && data.preferredRadiusKm >= 1 && data.preferredRadiusKm <= 500
+        && data.notificationsEnabled is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSportEvent(data) {
+      return data.keys().hasAll([
+        'id', 'hostId', 'hostName', 'title', 'sport', 'level', 'venueName',
+        'lat', 'lng', 'startsAtMs', 'durationMinutes', 'price',
+        'maxParticipants', 'participantsCount', 'status', 'chatId', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'hostId', 'hostName', 'hostPhotoURL', 'title', 'description',
+        'sport', 'level', 'venueName', 'address', 'city', 'lat', 'lng',
+        'startsAtMs', 'durationMinutes', 'price', 'maxParticipants',
+        'participantsCount', 'coverURL', 'status', 'chatId', 'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && isValidId(data.hostId)
+      && data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 60
+      && isOptionalString(data, 'hostPhotoURL', 1024)
+      && data.title is string && data.title.size() >= 3 && data.title.size() <= 80
+      && isOptionalString(data, 'description', 600)
+      && data.sport in ['Futebol', 'Basquete', 'Vôlei', 'Corrida', 'Tênis', 'Beach Tennis', 'Ciclismo', 'Funcional']
+      && data.level in ['Iniciante', 'Intermediário', 'Avançado', 'Todos']
+      && data.venueName is string && data.venueName.size() >= 2 && data.venueName.size() <= 100
+      && isOptionalString(data, 'address', 160)
+      && isOptionalString(data, 'city', 80)
+      && data.lat is number && data.lat >= -90 && data.lat <= 90
+      && data.lng is number && data.lng >= -180 && data.lng <= 180
+      && data.startsAtMs is number && data.startsAtMs > 0
+      && data.durationMinutes is number && data.durationMinutes >= 15 && data.durationMinutes <= 480
+      && data.price is number && data.price >= 0 && data.price <= 50000
+      && data.maxParticipants is number && data.maxParticipants >= 2 && data.maxParticipants <= 200
+      && data.participantsCount is number && data.participantsCount >= 1 && data.participantsCount <= data.maxParticipants
+      && isOptionalString(data, 'coverURL', 1024)
+      && data.status in ['active', 'cancelled', 'completed']
+      && isValidId(data.chatId)
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidParticipant(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'role', 'joinedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'role', 'joinedAt'])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60
+        && isOptionalString(data, 'photoURL', 1024)
+        && data.role in ['host', 'player']
+        && data.joinedAt is timestamp;
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll(['id', 'type', 'title', 'createdBy', 'memberIds', 'isOpenChannel', 'typingUserIds', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'type', 'title', 'sport', 'photoURL', 'eventId', 'groupId',
+          'createdBy', 'memberIds', 'isOpenChannel', 'lastMessageText',
+          'lastMessageSenderId', 'lastMessageSenderName', 'lastMessageAt',
+          'typingUserIds', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.type in ['direct', 'group', 'event']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 80
+        && isOptionalString(data, 'sport', 40)
+        && isOptionalString(data, 'photoURL', 1024)
+        && isOptionalString(data, 'eventId', 128)
+        && isOptionalString(data, 'groupId', 128)
+        && isValidId(data.createdBy)
+        && data.memberIds is list && data.memberIds.size() >= 1 && data.memberIds.size() <= 200
+        && data.memberIds[0] is string
+        && data.isOpenChannel is bool
+        && isOptionalString(data, 'lastMessageText', 300)
+        && isOptionalString(data, 'lastMessageSenderId', 128)
+        && isOptionalString(data, 'lastMessageSenderName', 60)
+        && (!('lastMessageAt' in data) || data.lastMessageAt is timestamp)
+        && data.typingUserIds is list && data.typingUserIds.size() <= 20
+        && (data.typingUserIds.size() == 0 || data.typingUserIds[0] is string)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['id', 'senderId', 'senderName', 'text', 'type', 'memberIds', 'isOpenChannel', 'createdAt'])
+        && data.keys().hasOnly(['id', 'senderId', 'senderName', 'senderPhotoURL', 'text', 'type', 'mediaURL', 'memberIds', 'isOpenChannel', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.senderId)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 60
+        && isOptionalString(data, 'senderPhotoURL', 1024)
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 1000
+        && data.type in ['text', 'image', 'system']
+        && isOptionalString(data, 'mediaURL', 1024)
+        && data.memberIds is list && data.memberIds.size() >= 1 && data.memberIds.size() <= 200
+        && data.memberIds[0] is string
+        && data.isOpenChannel is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSportGroup(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'name', 'sport', 'memberIds', 'membersCount', 'chatId', 'isPublic', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'ownerId', 'name', 'description', 'sport', 'city', 'photoURL', 'memberIds', 'membersCount', 'chatId', 'isPublic', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.ownerId)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 60
+        && isOptionalString(data, 'description', 300)
+        && data.sport is string && data.sport.size() >= 1 && data.sport.size() <= 40
+        && isOptionalString(data, 'city', 80)
+        && isOptionalString(data, 'photoURL', 1024)
+        && data.memberIds is list && data.memberIds.size() >= 1 && data.memberIds.size() <= 200
+        && data.memberIds[0] is string
+        && data.membersCount is number && data.membersCount >= 1 && data.membersCount <= 200
+        && isValidId(data.chatId)
+        && data.isPublic is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidFriendship(data) {
+      return data.keys().hasAll(['id', 'users', 'requesterId', 'recipientId', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'users', 'requesterId', 'recipientId', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.users is list && data.users.size() == 2 && data.users[0] is string && data.users[1] is string
+        && isValidId(data.requesterId)
+        && isValidId(data.recipientId)
+        && data.requesterId != data.recipientId
+        && data.status in ['pending', 'accepted']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'recipientId', 'senderId', 'senderName', 'type', 'title', 'body', 'read', 'createdAt'])
+        && data.keys().hasOnly(['id', 'recipientId', 'senderId', 'senderName', 'type', 'title', 'body', 'relatedId', 'read', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.recipientId)
+        && isValidId(data.senderId)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 60
+        && data.type in ['event_join', 'friend_request', 'friend_accepted', 'message', 'group_join']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 80
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 200
+        && isOptionalString(data, 'relatedId', 128)
+        && data.read is bool
+        && data.createdAt is timestamp;
+    }
+
+    // Users Public
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn() && (existing().uid == request.auth.uid || existing().discoverable == true);
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserPublic(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().verified == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserPublic(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().verified == existing().verified
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'username', 'photoURL', 'bannerURL', 'bio', 'city',
+          'favoriteSports', 'xp', 'matchesCount', 'eventsHostedCount',
+          'isOnline', 'lastSeen', 'lat', 'lng', 'shareLocation', 'discoverable', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    // Users Private (PII Isolation)
+    match /users_private/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserPrivate(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserPrivate(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['preferredRadiusKm', 'notificationsEnabled', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // Sports Events
+    match /events/{eventId} {
+      allow get: if isSignedIn() && isValidId(eventId);
+      allow list: if isSignedIn() && (existing().status in ['active', 'completed'] || existing().hostId == request.auth.uid);
+      allow create: if isVerifiedUser()
+        && isValidId(eventId)
+        && isValidSportEvent(incoming())
+        && incoming().id == eventId
+        && incoming().hostId == request.auth.uid
+        && incoming().status == 'active'
+        && incoming().participantsCount == 1
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(eventId)
+        && isValidSportEvent(incoming())
+        && existing().status == 'active'
+        && incoming().id == existing().id
+        && incoming().hostId == existing().hostId
+        && incoming().chatId == existing().chatId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (
+            isOwner(existing().hostId)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'description', 'level', 'venueName', 'address', 'city',
+              'lat', 'lng', 'startsAtMs', 'durationMinutes', 'price',
+              'maxParticipants', 'coverURL', 'status', 'updatedAt'
+            ])
+          )
+          || (
+            incoming().diff(existing()).affectedKeys().hasOnly(['participantsCount', 'updatedAt'])
+            && (
+              (
+                incoming().participantsCount == existing().participantsCount + 1
+                && existsAfter(/databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid))
+              )
+              || (
+                incoming().participantsCount == existing().participantsCount - 1
+                && !existsAfter(/databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid))
+              )
+            )
+          )
+        );
+      allow delete: if false;
+
+      match /participants/{participantId} {
+        allow get: if isSignedIn() && isValidId(eventId) && isValidId(participantId);
+        allow list: if isSignedIn() && existing().uid is string;
+        allow create: if isVerifiedUser()
+          && isValidId(eventId)
+          && isValidId(participantId)
+          && isOwner(participantId)
+          && isValidParticipant(incoming())
+          && incoming().uid == request.auth.uid
+          && incoming().joinedAt == request.time
+          && (
+            (
+              incoming().role == 'host'
+              && existsAfter(/databases/$(database)/documents/events/$(eventId))
+              && getAfter(/databases/$(database)/documents/events/$(eventId)).data.hostId == request.auth.uid
+            )
+            || (
+              incoming().role == 'player'
+              && exists(/databases/$(database)/documents/events/$(eventId))
+              && get(/databases/$(database)/documents/events/$(eventId)).data.status == 'active'
+              && getAfter(/databases/$(database)/documents/events/$(eventId)).data.participantsCount == get(/databases/$(database)/documents/events/$(eventId)).data.participantsCount + 1
+            )
+          );
+        allow update: if false;
+        allow delete: if isVerifiedUser()
+          && isValidId(eventId)
+          && isValidId(participantId)
+          && isOwner(participantId)
+          && existing().role == 'player'
+          && exists(/databases/$(database)/documents/events/$(eventId))
+          && getAfter(/databases/$(database)/documents/events/$(eventId)).data.participantsCount == get(/databases/$(database)/documents/events/$(eventId)).data.participantsCount - 1;
+      }
+    }
+
+    // Conversations & Messages
+    match /conversations/{convId} {
+      allow get: if isSignedIn() && isValidId(convId) && (request.auth.uid in existing().memberIds || existing().isOpenChannel == true);
+      allow list: if isSignedIn() && (request.auth.uid in existing().memberIds || existing().isOpenChannel == true);
+      allow create: if isVerifiedUser()
+        && isValidId(convId)
+        && isValidConversation(incoming())
+        && incoming().id == convId
+        && incoming().createdBy == request.auth.uid
+        && request.auth.uid in incoming().memberIds
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(convId)
+        && isValidConversation(incoming())
+        && incoming().id == existing().id
+        && incoming().type == existing().type
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (
+            request.auth.uid in existing().memberIds
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'lastMessageText', 'lastMessageSenderId', 'lastMessageSenderName',
+              'lastMessageAt', 'typingUserIds', 'updatedAt'
+            ])
+          )
+          || (
+            existing().isOpenChannel == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['memberIds', 'updatedAt'])
+            && (
+              (request.auth.uid in incoming().memberIds && incoming().memberIds.hasAll(existing().memberIds))
+              || (!(request.auth.uid in incoming().memberIds) && existing().memberIds.hasAll(incoming().memberIds))
+            )
+          )
+          || (
+            isOwner(existing().createdBy)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'photoURL', 'updatedAt'])
+          )
+        );
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow get: if isSignedIn()
+          && isValidId(convId)
+          && isValidId(messageId)
+          && (
+            request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.memberIds
+            || get(/databases/$(database)/documents/conversations/$(convId)).data.isOpenChannel == true
+          );
+        allow list: if isSignedIn() && (request.auth.uid in existing().memberIds || existing().isOpenChannel == true);
+        allow create: if isVerifiedUser()
+          && isValidId(convId)
+          && isValidId(messageId)
+          && isValidChatMessage(incoming())
+          && incoming().id == messageId
+          && incoming().senderId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/conversations/$(convId))
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.memberIds;
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+
+    // Sports Groups
+    match /groups/{groupId} {
+      allow get: if isSignedIn() && isValidId(groupId) && (existing().isPublic == true || request.auth.uid in existing().memberIds);
+      allow list: if isSignedIn() && (existing().isPublic == true || request.auth.uid in existing().memberIds);
+      allow create: if isVerifiedUser()
+        && isValidId(groupId)
+        && isValidSportGroup(incoming())
+        && incoming().id == groupId
+        && incoming().ownerId == request.auth.uid
+        && request.auth.uid in incoming().memberIds
+        && incoming().membersCount == 1
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(groupId)
+        && isValidSportGroup(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().chatId == existing().chatId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (
+            isOwner(existing().ownerId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'photoURL', 'isPublic', 'updatedAt'])
+          )
+          || (
+            existing().isPublic == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['memberIds', 'membersCount', 'updatedAt'])
+            && (
+              (
+                request.auth.uid in incoming().memberIds
+                && incoming().memberIds.hasAll(existing().memberIds)
+                && incoming().membersCount == existing().membersCount + 1
+              )
+              || (
+                !(request.auth.uid in incoming().memberIds)
+                && existing().memberIds.hasAll(incoming().memberIds)
+                && incoming().membersCount == existing().membersCount - 1
+                && request.auth.uid != existing().ownerId
+              )
+            )
+          )
+        );
+      allow delete: if false;
+    }
+
+    // Friendships
+    match /friendships/{friendshipId} {
+      allow get: if isSignedIn() && isValidId(friendshipId) && request.auth.uid in existing().users;
+      allow list: if isSignedIn() && request.auth.uid in existing().users;
+      allow create: if isVerifiedUser()
+        && isValidId(friendshipId)
+        && isValidFriendship(incoming())
+        && incoming().id == friendshipId
+        && incoming().requesterId == request.auth.uid
+        && request.auth.uid in incoming().users
+        && incoming().recipientId in incoming().users
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(friendshipId)
+        && isValidFriendship(incoming())
+        && incoming().id == existing().id
+        && incoming().requesterId == existing().requesterId
+        && incoming().recipientId == existing().recipientId
+        && incoming().users == existing().users
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && existing().status == 'pending'
+        && request.auth.uid == existing().recipientId
+        && incoming().status == 'accepted'
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isVerifiedUser()
+        && isValidId(friendshipId)
+        && request.auth.uid in existing().users;
+    }
+
+    // Notifications
+    match /notifications/{notifId} {
+      allow get: if isSignedIn() && isValidId(notifId) && existing().recipientId == request.auth.uid;
+      allow list: if isSignedIn() && existing().recipientId == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(notifId)
+        && isValidNotification(incoming())
+        && incoming().id == notifId
+        && incoming().senderId == request.auth.uid
+        && incoming().read == false
+        && incoming().createdAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(notifId)
+        && isValidNotification(incoming())
+        && incoming().id == existing().id
+        && incoming().recipientId == existing().recipientId
+        && incoming().senderId == existing().senderId
+        && incoming().createdAt == existing().createdAt
+        && existing().recipientId == request.auth.uid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isVerifiedUser()
+        && isValidId(notifId)
+        && existing().recipientId == request.auth.uid;
+    }
+  }
+}

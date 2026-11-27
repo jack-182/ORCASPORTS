@@ -1,0 +1,6 @@
+{
+  "name": "ORCA Conecta Sports",
+  "description": "Ecossistema esportivo em tempo real para descobrir partidas, conectar atletas pelo radar ao vivo e organizar eventos esportivos.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

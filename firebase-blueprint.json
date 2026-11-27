@@ -1,0 +1,229 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Public athlete profile without PII, used for discovery, radar, and social interactions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "username": { "type": "string", "minLength": 2, "maxLength": 32, "pattern": "^[a-zA-Z0-9_.]+$" },
+        "photoURL": { "type": "string", "maxLength": 1024 },
+        "bannerURL": { "type": "string", "maxLength": 1024 },
+        "bio": { "type": "string", "maxLength": 240 },
+        "city": { "type": "string", "maxLength": 80 },
+        "favoriteSports": { "type": "array" },
+        "xp": { "type": "number" },
+        "matchesCount": { "type": "number" },
+        "eventsHostedCount": { "type": "number" },
+        "reputationSum": { "type": "number" },
+        "reputationCount": { "type": "number" },
+        "followersCount": { "type": "number" },
+        "followingCount": { "type": "number" },
+        "isOnline": { "type": "boolean" },
+        "lastSeen": { "type": "string", "format": "date-time" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "shareLocation": { "type": "boolean" },
+        "discoverable": { "type": "boolean" },
+        "verified": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "username", "xp", "matchesCount", "eventsHostedCount", "isOnline", "shareLocation", "discoverable", "verified", "createdAt", "updatedAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Private PII and user settings isolated strictly to the owner.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "preferredRadiusKm": { "type": "number" },
+        "notificationsEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "preferredRadiusKm", "notificationsEnabled", "createdAt", "updatedAt"]
+    },
+    "SportEvent": {
+      "title": "SportEvent",
+      "description": "Real user-created sports event with geospatial coordinates and capacity.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "hostId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "hostName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "hostPhotoURL": { "type": "string", "maxLength": 1024 },
+        "title": { "type": "string", "minLength": 3, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 600 },
+        "sport": { "type": "string", "enum": ["Futebol", "Basquete", "Vôlei", "Corrida", "Tênis", "Beach Tennis", "Ciclismo", "Funcional"] },
+        "level": { "type": "string", "enum": ["Iniciante", "Intermediário", "Avançado", "Todos"] },
+        "venueName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "address": { "type": "string", "maxLength": 160 },
+        "city": { "type": "string", "maxLength": 80 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "startsAtMs": { "type": "number" },
+        "durationMinutes": { "type": "number" },
+        "price": { "type": "number" },
+        "maxParticipants": { "type": "number" },
+        "participantsCount": { "type": "number" },
+        "coverURL": { "type": "string", "maxLength": 1024 },
+        "status": { "type": "string", "enum": ["active", "cancelled", "completed"] },
+        "chatId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "hostId", "hostName", "title", "sport", "level", "venueName", "lat", "lng", "startsAtMs", "durationMinutes", "price", "maxParticipants", "participantsCount", "status", "chatId", "createdAt", "updatedAt"]
+    },
+    "EventParticipant": {
+      "title": "EventParticipant",
+      "description": "Participant record inside an event subcollection.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "photoURL": { "type": "string", "maxLength": 1024 },
+        "role": { "type": "string", "enum": ["host", "player"] },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "joinedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Real-time chat channel for direct messages, sports groups, or events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["direct", "group", "event"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "sport": { "type": "string", "maxLength": 40 },
+        "photoURL": { "type": "string", "maxLength": 1024 },
+        "eventId": { "type": "string", "maxLength": 128 },
+        "groupId": { "type": "string", "maxLength": 128 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "memberIds": { "type": "array" },
+        "isOpenChannel": { "type": "boolean" },
+        "lastMessageText": { "type": "string", "maxLength": 300 },
+        "lastMessageSenderId": { "type": "string", "maxLength": 128 },
+        "lastMessageSenderName": { "type": "string", "maxLength": 60 },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "typingUserIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "title", "createdBy", "memberIds", "isOpenChannel", "typingUserIds", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Persisted real-time chat message within a conversation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "senderPhotoURL": { "type": "string", "maxLength": 1024 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "type": { "type": "string", "enum": ["text", "image", "system"] },
+        "mediaURL": { "type": "string", "maxLength": 1024 },
+        "memberIds": { "type": "array" },
+        "isOpenChannel": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "senderId", "senderName", "text", "type", "memberIds", "isOpenChannel", "createdAt"]
+    },
+    "SportGroup": {
+      "title": "SportGroup",
+      "description": "Real user-created athletic community group.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 300 },
+        "sport": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "city": { "type": "string", "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 1024 },
+        "memberIds": { "type": "array" },
+        "membersCount": { "type": "number" },
+        "chatId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "name", "sport", "memberIds", "membersCount", "chatId", "isPublic", "createdAt", "updatedAt"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Real connection or pending friend request between two athletes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "users": { "type": "array" },
+        "requesterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "recipientId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["pending", "accepted"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "users", "requesterId", "recipientId", "status", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Real-time notification delivered to a specific user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "recipientId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "type": { "type": "string", "enum": ["event_join", "friend_request", "friend_accepted", "message", "group_join"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "relatedId": { "type": "string", "maxLength": 128 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "recipientId", "senderId", "senderName", "type", "title", "body", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublic" },
+      "description": "Public athlete profiles (no PII)."
+    },
+    "/users_private/{userId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Isolated PII and private settings per athlete."
+    },
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/SportEvent" },
+      "description": "Active, completed, and cancelled sports events."
+    },
+    "/events/{eventId}/participants/{participantId}": {
+      "schema": { "$ref": "#/entities/EventParticipant" },
+      "description": "Participants enrolled in a specific event."
+    },
+    "/conversations/{convId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Real-time direct, group, and event conversation channels."
+    },
+    "/conversations/{convId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Messages belonging to a conversation."
+    },
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/SportGroup" },
+      "description": "Sports groups created by real users."
+    },
+    "/friendships/{friendshipId}": {
+      "schema": { "$ref": "#/entities/Friendship" },
+      "description": "Friend connections and requests."
+    },
+    "/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "User notifications."
+    }
+  }
+}

@@ -1,0 +1,38 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Branch-specific contexts: main -> production, development -> staging/preview
+[context.production]
+  command = "npm run build"
+
+[context.branch-deploy]
+  command = "npm run build"
+
+[context.development]
+  command = "npm run build"
+
+# SPA fallback routing (prevents 404 or blank page on subroutes)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Ensure index.html is never served from stale browser/CDN cache
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Cache hashed Vite assets aggressively
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
