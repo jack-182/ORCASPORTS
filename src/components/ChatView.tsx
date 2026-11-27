@@ -8,6 +8,7 @@ import {
   Search,
   Send,
   Users,
+  WifiOff,
   X,
 } from 'lucide-react';
 import {
@@ -54,7 +55,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onBackToHome,
   onSelectAthlete,
 }) => {
-  const { userProfile } = useAuth();
+  const { userProfile, isNetworkOnline } = useAuth();
   const {
     conversations,
     conversationsLoading,
@@ -71,6 +72,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [pendingMsgIds, setPendingMsgIds] = useState<Set<string>>(() => new Set());
+  const [messagesFromCache, setMessagesFromCache] = useState(false);
   const [draftText, setDraftText] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -108,6 +111,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     if (!activeConversation || !userProfile) {
       setMessages([]);
+      setPendingMsgIds(new Set());
+      setMessagesFromCache(false);
       return;
     }
 
@@ -128,8 +133,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
     const unsub = onSnapshot(
       q,
+      { includeMetadataChanges: true },
       (snap) => {
-        setMessages(snap.docs.map((d) => d.data() as ChatMessage));
+        const pending = new Set<string>();
+        const list = snap.docs.map((d) => {
+          if (d.metadata.hasPendingWrites) {
+            pending.add(d.id);
+          }
+          return d.data() as ChatMessage;
+        });
+        setMessages(list);
+        setPendingMsgIds(pending);
+        setMessagesFromCache(snap.metadata.fromCache);
         setMessagesLoading(false);
       },
       (err) => {
@@ -145,7 +160,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
     return () => {
       unsub();
       if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
-      void setTypingState(activeConversation.id, userProfile.uid, false);
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        void setTypingState(activeConversation.id, userProfile.uid, false);
+      }
     };
   }, [activeConversation?.id, activeConversation?.isOpenChannel, userProfile?.uid]);
 
@@ -201,6 +218,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const handleTypingChange = (val: string) => {
     setDraftText(val);
     if (!activeConversation || !userProfile) return;
+    if (!isNetworkOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      return;
+    }
 
     void setTypingState(activeConversation.id, userProfile.uid, val.trim().length > 0);
 
@@ -209,7 +229,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
     if (val.trim().length > 0) {
       typingTimeoutRef.current = window.setTimeout(() => {
-        void setTypingState(activeConversation.id, userProfile.uid, false);
+        if (typeof navigator === 'undefined' || navigator.onLine) {
+          void setTypingState(activeConversation.id, userProfile.uid, false);
+        }
       }, 3000);
     }
   };
@@ -219,6 +241,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
     if (!activeConversation || !userProfile || !draftText.trim() || sending) return;
     const textToSend = draftText.trim();
     setDraftText('');
+
+    if (!isNetworkOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      // Write immediately to Firestore local cache; server syncs automatically upon reconnect
+      void sendMessage(activeConversation, userProfile, textToSend, 'text').catch(() => undefined);
+      return;
+    }
+
     setSending(true);
     try {
       await sendMessage(activeConversation, userProfile, textToSend, 'text');
@@ -229,7 +258,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const handleSendImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !activeConversation || !userProfile) return;
+    if (!file || !activeConversation || !userProfile || !isNetworkOnline) {
+      e.target.value = '';
+      return;
+    }
     setSending(true);
     try {
       const url = await uploadMediaFile(userProfile.uid, 'chat', file);
@@ -556,7 +588,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
                             {disp.title}
                           </div>
                           <div className="text-[11px] text-slate-400 truncate">
-                            {typingNames.length > 0
+                            {!isNetworkOnline
+                              ? messagesFromCache
+                                ? 'Histórico offline em cache'
+                                : 'Sem conexão'
+                              : typingNames.length > 0
                               ? `${typingNames[0]} está digitando...`
                               : activeConversation.type === 'direct'
                               ? disp.isOnline
@@ -567,6 +603,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         </div>
                       </button>
                     </div>
+                    {!isNetworkOnline && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-amber-300 shrink-0">
+                        <WifiOff className="w-3.5 h-3.5" />
+                        Offline
+                      </span>
+                    )}
                   </div>
                 );
               })()}
@@ -626,7 +668,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
                               isMine ? 'text-white/75' : 'text-slate-500'
                             }`}
                           >
-                            {formatRelativeTimestamp(msg.createdAt)}
+                            {pendingMsgIds.has(msg.id) || !msg.createdAt
+                              ? 'Pendente · offline'
+                              : formatRelativeTimestamp(msg.createdAt)}
                           </div>
                         </div>
                       </div>
@@ -642,13 +686,22 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 className="p-3 sm:p-4 border-t border-white/8 bg-[#0E121B] flex items-center gap-2.5"
               >
                 <label
-                  title="Enviar imagem"
-                  className="w-10 h-10 rounded-xl bg-white/6 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 cursor-pointer shrink-0"
+                  title={
+                    isNetworkOnline
+                      ? 'Enviar imagem'
+                      : 'Envio de imagens indisponível offline'
+                  }
+                  className={`w-10 h-10 rounded-xl bg-white/6 border border-white/10 flex items-center justify-center text-slate-300 shrink-0 ${
+                    isNetworkOnline
+                      ? 'hover:bg-white/10 cursor-pointer'
+                      : 'opacity-40 cursor-not-allowed'
+                  }`}
                 >
                   <ImageIcon className="w-4 h-4" />
                   <input
                     type="file"
                     accept="image/*"
+                    disabled={!isNetworkOnline}
                     onChange={handleSendImage}
                     className="hidden"
                   />
@@ -658,7 +711,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   maxLength={1000}
                   value={draftText}
                   onChange={(e) => handleTypingChange(e.target.value)}
-                  placeholder="Escreva uma mensagem real..."
+                  placeholder={
+                    isNetworkOnline
+                      ? 'Escreva uma mensagem real...'
+                      : 'Offline — mensagem será sincronizada ao reconectar...'
+                  }
                   className="flex-1 px-4 py-2.5 rounded-xl bg-[#07090F] border border-white/10 text-sm text-white placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none"
                 />
                 <button

@@ -5,9 +5,15 @@ import {
   setPersistence,
 } from 'firebase/auth';
 import {
+  CACHE_SIZE_UNLIMITED,
   doc,
   getDocFromServer,
   getFirestore,
+  initializeFirestore,
+  memoryLocalCache,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import appletConfig from '../../firebase-applet-config.json';
@@ -27,7 +33,31 @@ const databaseId =
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-export const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+function createFirestoreInstance(): { db: Firestore; offlinePersistenceEnabled: boolean } {
+  const canUseIndexedDb = typeof indexedDB !== 'undefined';
+  try {
+    const localCache = canUseIndexedDb
+      ? persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+          cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+        })
+      : memoryLocalCache();
+
+    const instance = initializeFirestore(
+      app,
+      { localCache },
+      databaseId || undefined
+    );
+    return { db: instance, offlinePersistenceEnabled: canUseIndexedDb };
+  } catch {
+    const fallback = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+    return { db: fallback, offlinePersistenceEnabled: canUseIndexedDb };
+  }
+}
+
+const firestoreInit = createFirestoreInstance();
+export const db = firestoreInit.db;
+export const isOfflinePersistenceEnabled = firestoreInit.offlinePersistenceEnabled;
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
@@ -92,6 +122,9 @@ let connectionTested = false;
 
 export async function testConnection(): Promise<void> {
   if (connectionTested) return;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return;
+  }
   connectionTested = true;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -103,3 +136,13 @@ export async function testConnection(): Promise<void> {
 }
 
 void testConnection();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'online',
+    () => {
+      void testConnection();
+    },
+    { once: true }
+  );
+}

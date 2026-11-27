@@ -718,19 +718,27 @@ export async function markNotificationRead(notifId: string): Promise<void> {
 }
 
 export async function fetchUserJoinedEventIds(uid: string): Promise<string[]> {
-  const eventsSnap = await getDocs(
-    query(collection(db, 'events'), where('status', '==', 'active'), limit(50))
-  );
-  const joined: string[] = [];
-  await Promise.all(
-    eventsSnap.docs.map(async (evDoc) => {
-      const pSnap = await getDoc(doc(db, 'events', evDoc.id, 'participants', uid));
-      if (pSnap.exists()) {
-        joined.push(evDoc.id);
-      }
-    })
-  );
-  return joined;
+  try {
+    const eventsSnap = await getDocs(
+      query(collection(db, 'events'), where('status', '==', 'active'), limit(50))
+    );
+    const joined: string[] = [];
+    await Promise.all(
+      eventsSnap.docs.map(async (evDoc) => {
+        try {
+          const pSnap = await getDoc(doc(db, 'events', evDoc.id, 'participants', uid));
+          if (pSnap.exists()) {
+            joined.push(evDoc.id);
+          }
+        } catch {
+          // Skip uncached participant subcollection doc when offline
+        }
+      })
+    );
+    return joined;
+  } catch {
+    return [];
+  }
 }
 
 export async function geocodeLocationQuery(

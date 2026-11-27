@@ -29,11 +29,13 @@ import { useAuth } from './AuthContext';
 interface OrcaDataContextValue {
   events: SportEvent[];
   eventsLoading: boolean;
+  eventsFromCache: boolean;
   athletes: UserPublic[];
   athletesLoading: boolean;
   onlineAthletes: UserPublic[];
   conversations: Conversation[];
   conversationsLoading: boolean;
+  conversationsFromCache: boolean;
   groups: SportGroup[];
   groupsLoading: boolean;
   friendships: Friendship[];
@@ -52,12 +54,14 @@ export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const [events, setEvents] = useState<SportEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsFromCache, setEventsFromCache] = useState(false);
 
   const [athletes, setAthletes] = useState<UserPublic[]>([]);
   const [athletesLoading, setAthletesLoading] = useState(true);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
+  const [conversationsFromCache, setConversationsFromCache] = useState(false);
 
   const [groups, setGroups] = useState<SportGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(true);
@@ -89,8 +93,10 @@ export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
       setNotifications([]);
       setJoinedEventIds([]);
       setEventsLoading(false);
+      setEventsFromCache(false);
       setAthletesLoading(false);
       setConversationsLoading(false);
+      setConversationsFromCache(false);
       setGroupsLoading(false);
       return;
     }
@@ -108,9 +114,11 @@ export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
     );
     const unsubEvents = onSnapshot(
       eventsQ,
+      { includeMetadataChanges: true },
       (snap) => {
         const list = snap.docs.map((d) => d.data() as SportEvent);
         setEvents(list);
+        setEventsFromCache(snap.metadata.fromCache);
         setEventsLoading(false);
         void fetchUserJoinedEventIds(uid).then(setJoinedEventIds).catch(() => undefined);
       },
@@ -144,6 +152,7 @@ export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
     );
     const unsubConvs = onSnapshot(
       convQ,
+      { includeMetadataChanges: true },
       (snap) => {
         const list = snap.docs.map((d) => d.data() as Conversation);
         list.sort((a, b) => {
@@ -152,6 +161,7 @@ export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
           return bTime - aTime;
         });
         setConversations(list);
+        setConversationsFromCache(snap.metadata.fromCache);
         setConversationsLoading(false);
       },
       (err) => {
@@ -238,11 +248,13 @@ export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
     () => ({
       events,
       eventsLoading,
+      eventsFromCache,
       athletes,
       athletesLoading,
       onlineAthletes,
       conversations,
       conversationsLoading,
+      conversationsFromCache,
       groups,
       groupsLoading,
       friendships,
@@ -254,11 +266,13 @@ export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
     [
       events,
       eventsLoading,
+      eventsFromCache,
       athletes,
       athletesLoading,
       onlineAthletes,
       conversations,
       conversationsLoading,
+      conversationsFromCache,
       groups,
       groupsLoading,
       friendships,

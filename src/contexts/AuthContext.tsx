@@ -38,6 +38,7 @@ interface AuthContextValue {
   userPrivate: UserPrivate | null;
   authReady: boolean;
   emailVerified: boolean;
+  isNetworkOnline: boolean;
   coords: GeoCoordinates | null;
   geoStatus: GeoStatus;
   detectedCity: string;
@@ -60,6 +61,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userPrivate, setUserPrivate] = useState<UserPrivate | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsNetworkOnline(true);
+    const handleOffline = () => setIsNetworkOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const [coords, setCoords] = useState<GeoCoordinates | null>(null);
   const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle');
@@ -112,23 +127,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => navigator.geolocation.clearWatch(watchId);
   }, [geoStatus]);
 
-  // Firebase Auth state listener
+  // Firebase Auth state listener (non-blocking so offline cached sessions open immediately)
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
       setFirebaseUser(user);
       setEmailVerified(Boolean(user?.emailVerified));
+      setAuthReady(true);
 
       if (user && user.emailVerified) {
-        try {
-          await syncUserOnSignIn(user);
-        } catch (err) {
-          console.error('Failed to sync profile on sign-in:', err);
+        if (typeof navigator === 'undefined' || navigator.onLine) {
+          void syncUserOnSignIn(user).catch((err) => {
+            console.warn('Profile sync deferred (offline or transient):', err);
+          });
         }
       } else if (!user) {
         setUserProfile(null);
         setUserPrivate(null);
       }
-      setAuthReady(true);
     });
     return () => unsub();
   }, []);
@@ -177,20 +192,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [authReady, firebaseUser, emailVerified]);
 
-  // Real online presence & GPS coordinates heartbeat
+  // Real online presence & GPS coordinates heartbeat (skipped while offline)
   useEffect(() => {
-    if (!firebaseUser || !emailVerified) return;
+    if (!firebaseUser || !emailVerified || !isNetworkOnline) return;
 
     const uid = firebaseUser.uid;
     void updateOnlinePresence(uid, true, coordsRef.current);
 
     const heartbeat = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
         void updateOnlinePresence(uid, true, coordsRef.current);
       }
     }, 45000);
 
     const handleVisibility = () => {
+      if (!navigator.onLine) return;
       void updateOnlinePresence(
         uid,
         document.visibilityState === 'visible',
@@ -199,6 +215,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const handleBeforeUnload = () => {
+      if (!navigator.onLine) return;
       void updateOnlinePresence(uid, false, coordsRef.current);
     };
 
@@ -210,7 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [firebaseUser, emailVerified]);
+  }, [firebaseUser, emailVerified, isNetworkOnline]);
 
   // Sync newly detected city into user profile if empty
   useEffect(() => {
@@ -300,6 +317,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       userPrivate,
       authReady,
       emailVerified,
+      isNetworkOnline,
       coords,
       geoStatus,
       detectedCity,
@@ -319,6 +337,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       userPrivate,
       authReady,
       emailVerified,
+      isNetworkOnline,
       coords,
       geoStatus,
       detectedCity,

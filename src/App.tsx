@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useState } from 'react';
-import { Bell, Home, MessageCircle, Plus, Radio, User } from 'lucide-react';
+import { Bell, Home, MessageCircle, Plus, Radio, User, WifiOff } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { OrcaDataProvider, useOrcaData } from './contexts/OrcaDataContext';
@@ -43,8 +43,9 @@ const NotificationsDrawer = React.lazy(() =>
 );
 
 const AuthenticatedShell: React.FC = () => {
-  const { userProfile } = useAuth();
-  const { unreadNotificationsCount } = useOrcaData();
+  const { userProfile, isNetworkOnline } = useAuth();
+  const { unreadNotificationsCount, eventsFromCache, conversationsFromCache } =
+    useOrcaData();
 
   const [activeTab, setActiveTab] = useState<AppTab>('home');
   const [showCreateEvent, setShowCreateEvent] = useState(false);
@@ -146,6 +147,19 @@ const AuthenticatedShell: React.FC = () => {
 
       {/* Main Content with smooth fade transition (prevents white screen on chat exit) */}
       <main className="flex-1">
+        {!isNetworkOnline && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3">
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-amber-500/10 border border-amber-400/25 text-xs text-amber-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <WifiOff className="w-4 h-4 text-amber-300 shrink-0" />
+                <span className="truncate">
+                  Sem conexão com a internet — exibindo eventos e histórico de chat salvos em cache
+                  {eventsFromCache || conversationsFromCache ? ' (offline)' : ''}.
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
