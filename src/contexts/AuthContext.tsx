@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import {
   createUserWithEmailAndPassword,
+  getRedirectResult,
   GoogleAuthProvider,
   OAuthProvider,
   onAuthStateChanged,
@@ -16,6 +17,7 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   updateProfile,
   type User as FirebaseUser,
@@ -38,6 +40,7 @@ interface AuthContextValue {
   userPrivate: UserPrivate | null;
   authReady: boolean;
   emailVerified: boolean;
+  authRedirectError: unknown | null;
   isNetworkOnline: boolean;
   coords: GeoCoordinates | null;
   geoStatus: GeoStatus;
@@ -61,6 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userPrivate, setUserPrivate] = useState<UserPrivate | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [authRedirectError, setAuthRedirectError] = useState<unknown | null>(null);
   const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
@@ -127,6 +131,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => navigator.geolocation.clearWatch(watchId);
   }, [geoStatus]);
 
+  // Handle redirect auth result when returning from signInWithRedirect fallback
+  useEffect(() => {
+    void getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user && (typeof navigator === 'undefined' || navigator.onLine)) {
+          void syncUserOnSignIn(result.user).catch((err) => {
+            console.warn('Redirect profile sync warning:', err);
+          });
+        }
+      })
+      .catch((err) => {
+        setAuthRedirectError(err);
+      });
+  }, []);
+
   // Firebase Auth state listener (non-blocking so offline cached sessions open immediately)
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -134,13 +153,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setEmailVerified(Boolean(user?.emailVerified));
       setAuthReady(true);
 
-      if (user && user.emailVerified) {
+      if (user) {
         if (typeof navigator === 'undefined' || navigator.onLine) {
           void syncUserOnSignIn(user).catch((err) => {
             console.warn('Profile sync deferred (offline or transient):', err);
           });
         }
-      } else if (!user) {
+      } else {
         setUserProfile(null);
         setUserPrivate(null);
       }
@@ -150,14 +169,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Auto-request browser geolocation once signed in
   useEffect(() => {
-    if (firebaseUser && emailVerified && geoStatus === 'idle') {
+    if (firebaseUser && geoStatus === 'idle') {
       requestGeolocation();
     }
-  }, [firebaseUser, emailVerified, geoStatus, requestGeolocation]);
+  }, [firebaseUser, geoStatus, requestGeolocation]);
 
-  // Attach real-time Firestore listeners for userProfile & userPrivate ONLY when authenticated & verified
+  // Attach real-time Firestore listeners for userProfile & userPrivate ONLY when authenticated
   useEffect(() => {
-    if (!authReady || !firebaseUser || !emailVerified) return;
+    if (!authReady || !firebaseUser) return;
 
     const publicRef = doc(db, 'users', firebaseUser.uid);
     const privateRef = doc(db, 'users_private', firebaseUser.uid);
@@ -190,11 +209,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubPublic();
       unsubPrivate();
     };
-  }, [authReady, firebaseUser, emailVerified]);
+  }, [authReady, firebaseUser]);
 
   // Real online presence & GPS coordinates heartbeat (skipped while offline)
   useEffect(() => {
-    if (!firebaseUser || !emailVerified || !isNetworkOnline) return;
+    if (!firebaseUser || !isNetworkOnline) return;
 
     const uid = firebaseUser.uid;
     void updateOnlinePresence(uid, true, coordsRef.current);
@@ -227,46 +246,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [firebaseUser, emailVerified, isNetworkOnline]);
+  }, [firebaseUser, isNetworkOnline]);
 
   // Sync newly detected city into user profile if empty
   useEffect(() => {
-    if (firebaseUser && emailVerified && detectedCity && userProfile && !userProfile.city) {
+    if (firebaseUser && detectedCity && userProfile && !userProfile.city) {
       void updateUserProfile(firebaseUser.uid, { city: detectedCity }).catch(() => undefined);
     }
-  }, [firebaseUser, emailVerified, detectedCity, userProfile]);
+  }, [firebaseUser, detectedCity, userProfile]);
 
   // Push real GPS coordinates whenever coords change and shareLocation is active
   useEffect(() => {
-    if (firebaseUser && emailVerified && coords && userProfile?.shareLocation !== false) {
+    if (firebaseUser && coords && userProfile?.shareLocation !== false) {
       void updateOnlinePresence(firebaseUser.uid, true, coords);
     }
-  }, [firebaseUser, emailVerified, coords, userProfile?.shareLocation]);
+  }, [firebaseUser, coords, userProfile?.shareLocation]);
 
   const signInWithGoogle = useCallback(async () => {
+    setAuthRedirectError(null);
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
-    const cred = await signInWithPopup(auth, provider);
-    setEmailVerified(Boolean(cred.user.emailVerified));
-    if (cred.user.emailVerified) {
-      await syncUserOnSignIn(cred.user);
+    try {
+      const cred = await signInWithPopup(auth, provider);
+      setEmailVerified(Boolean(cred.user.emailVerified));
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        void syncUserOnSignIn(cred.user).catch((err) => {
+          console.warn('Google profile sync warning:', err);
+        });
+      }
+    } catch (err) {
+      const code = (err as { code?: string })?.code || '';
+      const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+      if (
+        !isInIframe &&
+        (code === 'auth/popup-blocked' ||
+          code === 'auth/operation-not-supported-in-this-environment')
+      ) {
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+      throw err;
     }
   }, []);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
+    setAuthRedirectError(null);
     const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
     setEmailVerified(Boolean(cred.user.emailVerified));
-    if (cred.user.emailVerified) {
-      await syncUserOnSignIn(cred.user);
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      void syncUserOnSignIn(cred.user).catch((err) => {
+        console.warn('Email profile sync warning:', err);
+      });
     }
   }, []);
 
   const signUpWithEmail = useCallback(
     async (name: string, email: string, password: string) => {
+      setAuthRedirectError(null);
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      await updateProfile(cred.user, { displayName: name.trim() });
-      await sendEmailVerification(cred.user);
+      await updateProfile(cred.user, { displayName: name.trim() }).catch(() => undefined);
       setEmailVerified(Boolean(cred.user.emailVerified));
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        void syncUserOnSignIn(cred.user, name.trim()).catch((err) => {
+          console.warn('Signup profile sync warning:', err);
+        });
+      }
+      void sendEmailVerification(cred.user).catch(() => undefined);
     },
     []
   );
@@ -317,6 +362,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       userPrivate,
       authReady,
       emailVerified,
+      authRedirectError,
       isNetworkOnline,
       coords,
       geoStatus,
@@ -337,6 +383,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       userPrivate,
       authReady,
       emailVerified,
+      authRedirectError,
       isNetworkOnline,
       coords,
       geoStatus,

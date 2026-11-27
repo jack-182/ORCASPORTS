@@ -50,7 +50,7 @@ const OrcaDataContext = createContext<OrcaDataContextValue | null>(null);
 export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { authReady, firebaseUser, emailVerified } = useAuth();
+  const { authReady, firebaseUser } = useAuth();
 
   const [events, setEvents] = useState<SportEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -71,17 +71,17 @@ export const OrcaDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [joinedEventIds, setJoinedEventIds] = useState<string[]>([]);
 
   const uid = firebaseUser?.uid;
-  const ready = authReady && Boolean(uid) && emailVerified;
+  const ready = authReady && Boolean(uid);
 
   const refreshJoinedEvents = useCallback(async () => {
-    if (!uid || !emailVerified) return;
+    if (!uid) return;
     try {
       const ids = await fetchUserJoinedEventIds(uid);
       setJoinedEventIds(ids);
     } catch (err) {
       console.warn('Error refreshing joined events:', err);
     }
-  }, [uid, emailVerified]);
+  }, [uid]);
 
   useEffect(() => {
     if (!ready || !uid) {

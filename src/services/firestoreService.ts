@@ -105,13 +105,40 @@ export async function syncUserOnSignIn(
     }
   } else {
     try {
-      await updateDoc(userRef, {
+      const existingData = existingSnap.data() as Record<string, unknown>;
+      const repairPayload: Record<string, unknown> = {
         isOnline: true,
         lastSeen: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (typeof existingData.displayName !== 'string' || existingData.displayName.length < 2) {
+        repairPayload.displayName = safeName;
+      }
+      if (typeof existingData.username !== 'string' || existingData.username.length < 2) {
+        const baseUsername = sanitizeUsername(fbUser.email?.split('@')[0] || safeName);
+        repairPayload.username = `${baseUsername.slice(0, 20)}_${fbUser.uid.slice(0, 4).toLowerCase()}`;
+      }
+      if (typeof existingData.xp !== 'number') repairPayload.xp = 0;
+      if (typeof existingData.matchesCount !== 'number') repairPayload.matchesCount = 0;
+      if (typeof existingData.eventsHostedCount !== 'number') repairPayload.eventsHostedCount = 0;
+      if (typeof existingData.shareLocation !== 'boolean') repairPayload.shareLocation = true;
+      if (typeof existingData.discoverable !== 'boolean') repairPayload.discoverable = true;
+
+      await updateDoc(userRef, repairPayload);
+
+      const privateSnap = await getDoc(privateRef).catch(() => null);
+      if (privateSnap && !privateSnap.exists()) {
+        await setDoc(privateRef, {
+          uid: fbUser.uid,
+          email: clampString(fbUser.email || `${fbUser.uid}@orca.app`, 160),
+          preferredRadiusKm: 25,
+          notificationsEnabled: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${fbUser.uid}`);
+      console.warn('User profile update warning:', error);
     }
   }
 }

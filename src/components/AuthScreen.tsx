@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   Check,
+  ExternalLink,
   Eye,
   EyeOff,
   HelpCircle,
   Lock,
   Mail,
   Radio,
-  RefreshCw,
   ShieldCheck,
   User,
   Users,
@@ -23,15 +23,11 @@ type FormMode = 'login' | 'register';
 
 export const AuthScreen: React.FC = () => {
   const {
-    firebaseUser,
-    emailVerified,
+    authRedirectError,
     signInWithGoogle,
     signInWithEmail,
     signUpWithEmail,
     sendPasswordReset,
-    resendVerificationEmail,
-    refreshAuthUser,
-    logout,
   } = useAuth();
 
   const [stage, setStage] = useState<AuthStage>('welcome');
@@ -44,123 +40,95 @@ export const AuthScreen: React.FC = () => {
 
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showNewTabHint, setShowNewTabHint] = useState(false);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [showHelpModal, setShowHelpModal] = useState(false);
 
-  // If user signed up via Email/Password and hasn't verified email yet
-  if (firebaseUser && !emailVerified) {
-    return (
-      <div className="min-h-screen bg-[#06070B] text-slate-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl bg-[#0E1117] border border-white/10 p-7 space-y-6">
-          <div className="flex items-center justify-between">
-            <OrcaLogo size="sm" showTagline />
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="text-xs text-slate-400 hover:text-white cursor-pointer"
-            >
-              Sair
-            </button>
-          </div>
-          <div className="space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-400">
-              <Mail className="w-6 h-6" />
-            </div>
-            <h1 className="text-2xl font-display font-bold tracking-tight">
-              Confirme seu e-mail
-            </h1>
-            <p className="text-sm text-slate-400 leading-relaxed">
-              Enviamos um link de verificação para{' '}
-              <span className="text-slate-200 font-medium">{firebaseUser.email}</span>.
-              Confirme para liberar seu acesso em tempo real ao ORCA.
-            </p>
-          </div>
+  const mapAuthErrorMessage = (err: unknown): { msg: string; newTab?: boolean } => {
+    const code = (err as { code?: string })?.code || '';
+    const message = err instanceof Error ? err.message : '';
 
-          {infoMsg && (
-            <p className="text-xs text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 rounded-xl px-3.5 py-2.5">
-              {infoMsg}
-            </p>
-          )}
-          {errorMsg && (
-            <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3.5 py-2.5">
-              {errorMsg}
-            </p>
-          )}
-
-          <div className="space-y-3">
-            <button
-              type="button"
-              disabled={loadingProvider === 'verify'}
-              onClick={async () => {
-                setLoadingProvider('verify');
-                setErrorMsg(null);
-                try {
-                  const ok = await refreshAuthUser();
-                  if (!ok) {
-                    setErrorMsg('E-mail ainda não confirmado. Verifique sua caixa de entrada ou spam.');
-                  }
-                } catch {
-                  setErrorMsg('Não foi possível verificar o status agora.');
-                } finally {
-                  setLoadingProvider(null);
-                }
-              }}
-              className="w-full py-3.5 px-5 rounded-2xl orca-gradient-btn text-white font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-            >
-              <RefreshCw className={`w-4 h-4 ${loadingProvider === 'verify' ? 'animate-spin' : ''}`} />
-              Já confirmei meu e-mail
-            </button>
-            <button
-              type="button"
-              disabled={loadingProvider === 'resend'}
-              onClick={async () => {
-                setLoadingProvider('resend');
-                setErrorMsg(null);
-                try {
-                  await resendVerificationEmail();
-                  setInfoMsg('Novo link de confirmação enviado!');
-                } catch {
-                  setErrorMsg('Aguarde alguns instantes antes de reenviar.');
-                } finally {
-                  setLoadingProvider(null);
-                }
-              }}
-              className="w-full py-3 px-5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-medium text-sm cursor-pointer disabled:opacity-60"
-            >
-              Reenviar e-mail de verificação
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    if (
+      code === 'auth/operation-not-allowed' ||
+      code === 'auth/admin-restricted-operation' ||
+      code === 'auth/configuration-not-found' ||
+      message.includes('PASSWORD_LOGIN_DISABLED')
+    ) {
+      return {
+        msg: 'Login por e-mail/senha ainda não está ativado no Firebase Console (Authentication → Sign-in method → E-mail/senha). Use "Continuar com Google" acima para entrar agora.',
+      };
+    }
+    if (code === 'auth/popup-blocked') {
+      return {
+        msg: 'O navegador bloqueou a janela do Google. Permita pop-ups para este site ou abra o aplicativo em uma nova aba.',
+        newTab: true,
+      };
+    }
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      return {
+        msg: 'A janela de login do Google foi fechada antes da conclusão. Tente novamente.',
+      };
+    }
+    if (code === 'auth/unauthorized-domain') {
+      const host = typeof window !== 'undefined' ? window.location.hostname : '';
+      return {
+        msg: `Domínio (${host}) não autorizado no Firebase Authentication → Settings → Authorized domains.`,
+      };
+    }
+    if (code === 'auth/network-request-failed') {
+      return {
+        msg: 'Falha de conexão ao autenticar. Verifique sua internet e tente novamente.',
+      };
+    }
+    if (code === 'auth/invalid-email') {
+      return { msg: 'Informe um endereço de e-mail válido.' };
+    }
+    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
+      return { msg: 'E-mail ou senha incorretos.' };
+    }
+    if (code === 'auth/user-not-found') {
+      return { msg: 'Nenhuma conta encontrada com este e-mail.' };
+    }
+    if (code === 'auth/email-already-in-use') {
+      return { msg: 'Este e-mail já está cadastrado. Tente entrar na aba ENTRAR ou use Google.' };
+    }
+    if (code === 'auth/weak-password' || code === 'auth/password-does-not-meet-requirements') {
+      return { msg: 'A senha deve ter pelo menos 6 caracteres.' };
+    }
+    if (code === 'auth/too-many-requests') {
+      return { msg: 'Muitas tentativas seguidas. Aguarde alguns instantes e tente novamente.' };
+    }
+    if (code === 'auth/operation-not-supported-in-this-environment' || code === 'auth/web-storage-unsupported') {
+      return {
+        msg: 'O navegador restringiu o login dentro desta janela incorporada. Abra o aplicativo em uma nova aba para entrar com Google.',
+        newTab: true,
+      };
+    }
+    return {
+      msg: code
+        ? `Não foi possível autenticar (${code}). Tente novamente.`
+        : 'Não foi possível autenticar agora. Tente novamente.',
+    };
+  };
 
   const handleAuthError = (err: unknown) => {
-    const code = (err as { code?: string })?.code || '';
-    if (code === 'auth/operation-not-allowed' || code === 'auth/configuration-not-found') {
-      setErrorMsg(
-        'Este provedor ainda não está ativado no Firebase Console. Ative-o em Authentication > Sign-in method ou entre com Google.'
-      );
-    } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
-      setErrorMsg('E-mail ou senha incorretos.');
-    } else if (code === 'auth/user-not-found') {
-      setErrorMsg('Nenhuma conta encontrada com este e-mail.');
-    } else if (code === 'auth/email-already-in-use') {
-      setErrorMsg('Este e-mail já está cadastrado. Tente entrar na sua conta.');
-    } else if (code === 'auth/weak-password') {
-      setErrorMsg('A senha deve ter pelo menos 6 caracteres.');
-    } else if (code === 'auth/popup-closed-by-user') {
-      setErrorMsg('Login cancelado antes da conclusão.');
-    } else {
-      setErrorMsg('Não foi possível autenticar agora. Tente novamente.');
-    }
+    const mapped = mapAuthErrorMessage(err);
+    setErrorMsg(mapped.msg);
+    setShowNewTabHint(Boolean(mapped.newTab));
   };
+
+  useEffect(() => {
+    if (authRedirectError) {
+      handleAuthError(authRedirectError);
+    }
+  }, [authRedirectError]);
 
   const handleGoogle = async () => {
     setErrorMsg(null);
     setInfoMsg(null);
+    setShowNewTabHint(false);
     setLoadingProvider('google');
     try {
       await signInWithGoogle();
@@ -175,6 +143,7 @@ export const AuthScreen: React.FC = () => {
     e.preventDefault();
     setErrorMsg(null);
     setInfoMsg(null);
+    setShowNewTabHint(false);
     if (!email.trim() || !password) {
       setErrorMsg('Preencha e-mail e senha para continuar.');
       return;
@@ -189,7 +158,7 @@ export const AuthScreen: React.FC = () => {
         await signInWithEmail(email, password);
       } else {
         await signUpWithEmail(name, email, password);
-        setInfoMsg('Conta criada! Confirme seu e-mail para entrar na rede.');
+        setInfoMsg('Conta criada com sucesso! Entrando no ORCA...');
       }
     } catch (err) {
       handleAuthError(err);
@@ -203,6 +172,7 @@ export const AuthScreen: React.FC = () => {
     if (!resetEmail.trim()) return;
     setLoadingProvider('reset');
     setErrorMsg(null);
+    setShowNewTabHint(false);
     try {
       await sendPasswordReset(resetEmail);
       setInfoMsg(`Link de recuperação enviado para ${resetEmail.trim()}.`);
@@ -335,6 +305,44 @@ export const AuthScreen: React.FC = () => {
             <OrcaLogo size="md" showTagline />
           </div>
 
+          {/* Primary Google Auth (Always visible above the fold) */}
+          <div className="space-y-2.5">
+            <button
+              type="button"
+              disabled={loadingProvider !== null}
+              onClick={handleGoogle}
+              className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-slate-100 text-slate-950 text-sm font-bold flex items-center justify-center gap-3 transition-colors cursor-pointer disabled:opacity-60 shadow-lg shadow-white/5"
+            >
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="#4285F4"
+                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
+                />
+              </svg>
+              {loadingProvider === 'google' ? 'Conectando Google...' : 'Continuar com Google'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-white/10" />
+            <span className="text-[11px] font-medium text-slate-500 tracking-wider">
+              OU COM E-MAIL
+            </span>
+            <div className="h-px flex-1 bg-white/10" />
+          </div>
+
           {/* Segmented Mode Switcher */}
           <div className="grid grid-cols-2 p-1 rounded-2xl bg-[#111520] border border-white/8">
             <button
@@ -342,6 +350,7 @@ export const AuthScreen: React.FC = () => {
               onClick={() => {
                 setMode('login');
                 setErrorMsg(null);
+                setShowNewTabHint(false);
               }}
               className={`py-2.5 text-xs font-display font-bold tracking-wider rounded-xl transition-all cursor-pointer whitespace-nowrap ${
                 mode === 'login'
@@ -356,6 +365,7 @@ export const AuthScreen: React.FC = () => {
               onClick={() => {
                 setMode('register');
                 setErrorMsg(null);
+                setShowNewTabHint(false);
               }}
               className={`py-2.5 text-xs font-display font-bold tracking-wider rounded-xl transition-all cursor-pointer whitespace-nowrap ${
                 mode === 'register'
@@ -368,8 +378,19 @@ export const AuthScreen: React.FC = () => {
           </div>
 
           {errorMsg && (
-            <div className="text-xs text-rose-200 bg-rose-500/15 border border-rose-500/30 rounded-xl px-4 py-3 leading-relaxed">
-              {errorMsg}
+            <div className="text-xs text-rose-200 bg-rose-500/15 border border-rose-500/30 rounded-xl px-4 py-3 leading-relaxed space-y-2">
+              <p>{errorMsg}</p>
+              {showNewTabHint && typeof window !== 'undefined' && (
+                <a
+                  href={window.location.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-cyan-300 font-semibold hover:underline"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Abrir em nova aba
+                </a>
+              )}
             </div>
           )}
           {infoMsg && (
@@ -480,43 +501,6 @@ export const AuthScreen: React.FC = () => {
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
-
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-white/10" />
-            <span className="text-[11px] font-medium text-slate-500 tracking-wider">
-              OU CONTINUE COM
-            </span>
-            <div className="h-px flex-1 bg-white/10" />
-          </div>
-
-          <div className="space-y-2.5">
-            <button
-              type="button"
-              disabled={loadingProvider !== null}
-              onClick={handleGoogle}
-              className="w-full py-3 px-4 rounded-xl bg-[#111520] hover:bg-[#171D2C] border border-white/10 text-sm font-medium text-white flex items-center justify-center gap-3 transition-colors cursor-pointer disabled:opacity-60"
-            >
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="#4285F4"
-                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
-                />
-              </svg>
-              {loadingProvider === 'google' ? 'Conectando Google...' : 'Continuar com Google'}
-            </button>
-          </div>
         </div>
 
         <div className="flex items-center justify-center gap-2 text-xs text-slate-500 pt-4">
@@ -578,7 +562,7 @@ export const AuthScreen: React.FC = () => {
               </button>
             </div>
             <p className="text-sm text-slate-300 leading-relaxed">
-              O ORCA Conecta Sports utiliza contas 100% reais via Firebase Authentication. Entre com sua conta Google para começar imediatamente ou crie uma conta com e-mail verificado.
+              O ORCA Sports utiliza contas 100% reais via Firebase Authentication. Entre imediatamente com sua conta Google ou utilize e-mail e senha (quando o provedor E-mail/senha estiver ativado no Firebase Console).
             </p>
             <button
               type="button"

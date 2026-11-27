@@ -313,7 +313,7 @@ const AuthenticatedShell: React.FC = () => {
 };
 
 const RootRouter: React.FC = () => {
-  const { authReady, firebaseUser, emailVerified } = useAuth();
+  const { authReady, firebaseUser } = useAuth();
 
   if (!authReady) {
     return (
@@ -326,7 +326,7 @@ const RootRouter: React.FC = () => {
     );
   }
 
-  if (!firebaseUser || !emailVerified) {
+  if (!firebaseUser) {
     return <AuthScreen />;
   }
 
