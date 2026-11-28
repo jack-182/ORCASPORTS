@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { firebaseProjectId } from '../lib/firebase';
 import { OrcaLogo } from './OrcaLogo';
 
 type AuthStage = 'welcome' | 'form';
@@ -57,7 +58,7 @@ export const AuthScreen: React.FC = () => {
       message.includes('PASSWORD_LOGIN_DISABLED')
     ) {
       return {
-        msg: 'Login por e-mail/senha ainda não está ativado no Firebase Console (Authentication → Sign-in method → E-mail/senha). Use "Continuar com Google" acima para entrar agora.',
+        msg: `Login por e-mail/senha desativado no projeto Firebase (${firebaseProjectId}). Ative em Authentication → Sign-in method → E-mail/senha, ou entre com Google.`,
       };
     }
     if (code === 'auth/popup-blocked') {
@@ -74,7 +75,7 @@ export const AuthScreen: React.FC = () => {
     if (code === 'auth/unauthorized-domain') {
       const host = typeof window !== 'undefined' ? window.location.hostname : '';
       return {
-        msg: `Domínio (${host}) não autorizado no Firebase Authentication → Settings → Authorized domains.`,
+        msg: `Domínio (${host}) não autorizado no projeto Firebase (${firebaseProjectId}). Adicione "${host}" em Authentication → Settings → Authorized domains no Firebase Console.`,
       };
     }
     if (code === 'auth/network-request-failed') {
@@ -300,47 +301,9 @@ export const AuthScreen: React.FC = () => {
           </button>
         </div>
 
-        <div className="my-auto py-8 max-w-sm mx-auto w-full space-y-6">
+        <div className="my-auto py-4 max-w-sm mx-auto w-full space-y-5">
           <div className="text-center lg:hidden">
             <OrcaLogo size="md" showTagline />
-          </div>
-
-          {/* Primary Google Auth (Always visible above the fold) */}
-          <div className="space-y-2.5">
-            <button
-              type="button"
-              disabled={loadingProvider !== null}
-              onClick={handleGoogle}
-              className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-slate-100 text-slate-950 text-sm font-bold flex items-center justify-center gap-3 transition-colors cursor-pointer disabled:opacity-60 shadow-lg shadow-white/5"
-            >
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="#4285F4"
-                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
-                />
-              </svg>
-              {loadingProvider === 'google' ? 'Conectando Google...' : 'Continuar com Google'}
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-white/10" />
-            <span className="text-[11px] font-medium text-slate-500 tracking-wider">
-              OU COM E-MAIL
-            </span>
-            <div className="h-px flex-1 bg-white/10" />
           </div>
 
           {/* Segmented Mode Switcher */}
@@ -399,7 +362,7 @@ export const AuthScreen: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleEmailSubmit} className="space-y-4">
+          <form onSubmit={handleEmailSubmit} className="space-y-3.5">
             {mode === 'register' && (
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold tracking-wider text-slate-400 block">
@@ -413,7 +376,7 @@ export const AuthScreen: React.FC = () => {
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Seu nome completo"
                     autoComplete="name"
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#0F131D] border border-white/10 focus:border-cyan-400/70 focus:outline-none text-sm text-white placeholder:text-slate-500"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#0F131D] border border-white/10 focus:border-cyan-400/70 focus:outline-none text-sm text-white placeholder:text-slate-500"
                   />
                 </div>
               </div>
@@ -431,7 +394,7 @@ export const AuthScreen: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="seuemail@exemplo.com"
                   autoComplete="email"
-                  className="w-full pl-10 pr-10 py-3 rounded-xl bg-[#0F131D] border border-white/10 focus:border-cyan-400/70 focus:outline-none text-sm text-white placeholder:text-slate-500"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[#0F131D] border border-white/10 focus:border-cyan-400/70 focus:outline-none text-sm text-white placeholder:text-slate-500"
                 />
                 {email.includes('@') && email.includes('.') && (
                   <Check className="w-4 h-4 text-emerald-400 absolute right-3.5" />
@@ -451,7 +414,7 @@ export const AuthScreen: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  className="w-full pl-10 pr-10 py-3 rounded-xl bg-[#0F131D] border border-white/10 focus:border-cyan-400/70 focus:outline-none text-sm text-white placeholder:text-slate-500"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[#0F131D] border border-white/10 focus:border-cyan-400/70 focus:outline-none text-sm text-white placeholder:text-slate-500"
                 />
                 <button
                   type="button"
@@ -491,7 +454,7 @@ export const AuthScreen: React.FC = () => {
             <button
               type="submit"
               disabled={loadingProvider !== null}
-              className="w-full py-3.5 px-5 rounded-2xl orca-gradient-btn text-white font-display font-bold text-sm tracking-wide flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-lg shadow-rose-500/15"
+              className="w-full py-3 px-5 rounded-2xl orca-gradient-btn text-white font-display font-bold text-sm tracking-wide flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-lg shadow-rose-500/15"
             >
               {loadingProvider === 'email'
                 ? 'Conectando...'
@@ -501,6 +464,41 @@ export const AuthScreen: React.FC = () => {
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
+
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-white/10" />
+            <span className="text-[11px] font-medium text-slate-500 tracking-wider">
+              OU CONTINUE COM
+            </span>
+            <div className="h-px flex-1 bg-white/10" />
+          </div>
+
+          <button
+            type="button"
+            disabled={loadingProvider !== null}
+            onClick={handleGoogle}
+            className="w-full py-3 px-4 rounded-xl bg-[#111520] hover:bg-[#171D2C] border border-white/10 text-sm font-medium text-white flex items-center justify-center gap-3 transition-colors cursor-pointer disabled:opacity-60"
+          >
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="#4285F4"
+                d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
+              />
+            </svg>
+            {loadingProvider === 'google' ? 'Conectando Google...' : 'Continuar com Google'}
+          </button>
         </div>
 
         <div className="flex items-center justify-center gap-2 text-xs text-slate-500 pt-4">

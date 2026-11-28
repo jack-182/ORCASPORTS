@@ -58,6 +58,7 @@ function createFirestoreInstance(): { db: Firestore; offlinePersistenceEnabled: 
 const firestoreInit = createFirestoreInstance();
 export const db = firestoreInit.db;
 export const isOfflinePersistenceEnabled = firestoreInit.offlinePersistenceEnabled;
+export const firebaseProjectId = firebaseConfig.projectId;
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
